@@ -3,6 +3,7 @@ from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 from database import SessionLocal, init_db
 from auth import models, schemas, utils
+import datetime
 
 # DB 초기화
 init_db()
@@ -35,36 +36,36 @@ def signup(user: schemas.UserCreate, db: Session = Depends(get_db)):
 
     return new_user
 
-# ✅ 2. 로그인 API (JWT 토큰 발급)
+# ✅ 2. 로그인 API (JWT 토큰 발급 + 만료 시간 반환)
 @router.post("/login")
 def login(user: schemas.UserCreate, db: Session = Depends(get_db)):
     db_user = db.query(models.User).filter(models.User.email == user.email).first()
     if not db_user or not utils.verify_password(user.password, db_user.hashed_password):
         raise HTTPException(status_code=400, detail="잘못된 이메일 또는 비밀번호입니다.")
     
-    # 🔹 JWT 토큰 생성 후 반환
-    access_token = utils.create_access_token({"sub": user.email})
-    return {"access_token": access_token, "token_type": "bearer"}
+    expires = datetime.timedelta(minutes=utils.ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token = utils.create_access_token({"sub": user.email}, expires_delta=expires)
+    
+    return {
+        "access_token": access_token,
+        "token_type": "bearer",
+        "expires_in": utils.ACCESS_TOKEN_EXPIRE_MINUTES
+    }
 
-# ✅ 3. 현재 로그인된 사용자 정보 반환 API
+# ✅ 3. 현재 로그인된 사용자 정보 반환 API (DB 조회 없이 처리)
 @router.get("/me")
-def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
-    payload = utils.verify_token(token)
-    if not payload:
+def get_current_user(token: str = Depends(oauth2_scheme)):
+    email = utils.verify_token(token)
+    if not email:
         raise HTTPException(status_code=401, detail="Invalid token")
 
-    email = payload.get("sub")
-    user = db.query(models.User).filter(models.User.email == email).first()
-    if not user:
-        raise HTTPException(status_code=401, detail="User not found")
+    return {"email": email}
 
-    return {"email": user.email}
-
-# ✅ 4. 비밀번호 변경 API
+# ✅ 4. 비밀번호 변경 API (토큰에서 이메일 추출하여 처리)
 @router.put("/update-password")
-def update_password(email: str, new_password: str, token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
-    payload = utils.verify_token(token)
-    if not payload or payload.get("sub") != email:
+def update_password(new_password: str, token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
+    email = utils.verify_token(token)
+    if not email:
         raise HTTPException(status_code=401, detail="Unauthorized")
 
     user = db.query(models.User).filter(models.User.email == email).first()
@@ -75,11 +76,11 @@ def update_password(email: str, new_password: str, token: str = Depends(oauth2_s
     db.commit()
     return {"message": "비밀번호가 성공적으로 변경되었습니다."}
 
-# ✅ 5. 회원 탈퇴 API
+# ✅ 5. 회원 탈퇴 API (토큰에서 이메일 추출하여 처리)
 @router.delete("/delete-account")
-def delete_account(email: str, token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
-    payload = utils.verify_token(token)
-    if not payload or payload.get("sub") != email:
+def delete_account(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
+    email = utils.verify_token(token)
+    if not email:
         raise HTTPException(status_code=401, detail="Unauthorized")
 
     user = db.query(models.User).filter(models.User.email == email).first()
