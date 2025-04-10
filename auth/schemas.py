@@ -31,3 +31,11 @@ class UserUpdate(BaseModel):
 class PasswordUpdate(BaseModel):
     old_password: str = Field(..., example="기존비번123")
     new_password: str = Field(..., example="새로운비번456")
+
+# 전화번호 인증번호 스키마
+class PhoneNumberSchema(BaseModel):
+    phone_number: str = Field(..., example="010-1234-5678")
+
+class VerificationSchema(BaseModel):
+    phone_number: str
+    code: str

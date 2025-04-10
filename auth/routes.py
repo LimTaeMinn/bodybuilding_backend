@@ -5,6 +5,12 @@ from database import SessionLocal, init_db
 from auth import models, schemas, utils
 import datetime
 import re  # 이메일 검증을 위한 정규식
+import random
+from datetime import datetime, timedelta
+
+# 인증번호 저장 (전화번호 → {"code": str, "expires_at": datetime})
+verification_codes = {}
+
 
 # DB 초기화
 init_db()
@@ -157,3 +163,35 @@ def change_password(
     db.commit()
     
     return {"message": "비밀번호가 변경되었습니다."}
+
+# ✅ 8. 인증번호 전송 (임시 Mock 방식)
+@router.post("/send-code")
+def send_verification_code(data: schemas.PhoneNumberSchema):
+    code = f"{random.randint(100000, 999999)}"
+    expires_at = datetime.utcnow() + timedelta(minutes=3)
+
+    verification_codes[data.phone_number] = {
+        "code": code,
+        "expires_at": expires_at
+    }
+
+    # 실제 문자 발송 대신 → 인증번호를 응답에 포함
+    return {
+        "message": "인증번호가 발송되었습니다 (Mock)",
+        "code": code  # 실제 배포 시 제거 필요
+    }
+
+# ✅ 9. 인증번호 검증
+@router.post("/verify-code")
+def verify_code(data: schemas.VerificationSchema):
+    record = verification_codes.get(data.phone_number)
+    if not record:
+        raise HTTPException(status_code=404, detail="인증번호가 존재하지 않습니다.")
+
+    if record["expires_at"] < datetime.utcnow():
+        raise HTTPException(status_code=400, detail="인증번호가 만료되었습니다.")
+
+    if record["code"] != data.code:
+        raise HTTPException(status_code=400, detail="인증번호가 일치하지 않습니다.")
+
+    return {"message": "인증 성공"}
