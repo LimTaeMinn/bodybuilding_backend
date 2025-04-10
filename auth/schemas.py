@@ -26,3 +26,8 @@ class UserResponse(BaseModel):
 class UserUpdate(BaseModel):
     name: str = Field(..., example="홍길순")
     phone_number: str = Field(..., example="010-9876-5432")
+
+# 비밀번호 변경용 스키마
+class PasswordUpdate(BaseModel):
+    old_password: str = Field(..., example="기존비번123")
+    new_password: str = Field(..., example="새로운비번456")

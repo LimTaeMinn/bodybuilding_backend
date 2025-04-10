@@ -132,3 +132,28 @@ def update_profile(
     db.refresh(user)
     
     return user
+
+# ✅ 7. 비밀번호 변경 (기존 비번 확인)
+@router.patch("/user/password")
+def change_password(
+    passwords: schemas.PasswordUpdate,
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db)
+):
+    email = utils.verify_token(token)
+    if not email:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    user = db.query(models.User).filter(models.User.email == email).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # 기존 비밀번호 검증
+    if not utils.verify_password(passwords.old_password, user.hashed_password):
+        raise HTTPException(status_code=400, detail="기존 비밀번호가 일치하지 않습니다.")
+
+    # 새 비밀번호 해싱 후 저장
+    user.hashed_password = utils.hash_password(passwords.new_password)
+    db.commit()
+    
+    return {"message": "비밀번호가 변경되었습니다."}
