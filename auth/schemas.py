@@ -21,3 +21,8 @@ class UserResponse(BaseModel):
 
     class Config:
         orm_mode = True
+
+# 사용자 정보 수정용 스키마
+class UserUpdate(BaseModel):
+    name: str = Field(..., example="홍길순")
+    phone_number: str = Field(..., example="010-9876-5432")

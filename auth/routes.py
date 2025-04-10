@@ -67,9 +67,9 @@ def login(user: schemas.UserLogin, db: Session = Depends(get_db)):
         "expires_in": utils.ACCESS_TOKEN_EXPIRE_MINUTES
     }
 
-# ✅ 3. 로그인된 사용자 정보
-@router.get("/me")
-def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
+# ✅ 3. 마이페이지 유저 정보 조회
+@router.get("/user/me", response_model=schemas.UserResponse)
+def get_user_info(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
     email = utils.verify_token(token)
     if not email:
         raise HTTPException(status_code=401, detail="Invalid token")
@@ -78,12 +78,8 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     
-    return {
-        "id": user.id,
-        "name": user.name,
-        "phone_number": user.phone_number,
-        "email": user.email
-    }
+    return user
+
 
 # ✅ 4. 비밀번호 변경
 @router.put("/update-password")
@@ -114,3 +110,25 @@ def delete_account(token: str = Depends(oauth2_scheme), db: Session = Depends(ge
     db.delete(user)
     db.commit()
     return {"message": "회원 탈퇴가 완료되었습니다."}
+
+# ✅ 6. 마이페이지 이름/번호 수정
+@router.patch("/user/profile", response_model=schemas.UserResponse)
+def update_profile(
+    update: schemas.UserUpdate,
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db)
+):
+    email = utils.verify_token(token)
+    if not email:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    user = db.query(models.User).filter(models.User.email == email).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    user.name = update.name
+    user.phone_number = update.phone_number
+    db.commit()
+    db.refresh(user)
+    
+    return user
