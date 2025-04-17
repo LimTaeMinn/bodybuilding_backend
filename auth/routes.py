@@ -64,7 +64,7 @@ def login(user: schemas.UserLogin, db: Session = Depends(get_db)):
     if not db_user or not utils.verify_password(user.password, db_user.hashed_password):
         raise HTTPException(status_code=400, detail="잘못된 이메일 또는 비밀번호입니다.")
     
-    expires = datetime.timedelta(minutes=utils.ACCESS_TOKEN_EXPIRE_MINUTES)
+    expires = timedelta(minutes=utils.ACCESS_TOKEN_EXPIRE_MINUTES)
     token = utils.create_access_token({"sub": user.email}, expires_delta=expires)
 
     return {
@@ -195,3 +195,50 @@ def verify_code(data: schemas.VerificationSchema):
         raise HTTPException(status_code=400, detail="인증번호가 일치하지 않습니다.")
 
     return {"message": "인증 성공"}
+
+# 10. 체지방 측정 기록
+@router.post("/fat-history")
+def save_fat_history(
+    data: schemas.FatHistoryCreate,
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db)
+):
+    email = utils.verify_token(token)
+    if not email:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    user = db.query(models.User).filter(models.User.email == email).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    new_history = models.FatHistory(
+        user_id=user.id,
+        fat_rate=data.fat_rate,
+        confidence=data.confidence,
+        recommended_diet=data.recommended_diet,
+        recommended_workout=data.recommended_workout
+    )
+
+    db.add(new_history)
+    db.commit()
+    db.refresh(new_history)
+
+    return {"message": "체지방 기록 저장 완료"}
+
+@router.get("/fat-history", response_model=list[schemas.FatHistoryResponse])
+def get_fat_history(
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db)
+):
+    email = utils.verify_token(token)
+    if not email:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    user = db.query(models.User).filter(models.User.email == email).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    return db.query(models.FatHistory)\
+        .filter(models.FatHistory.user_id == user.id)\
+        .order_by(models.FatHistory.created_at.desc())\
+        .all()

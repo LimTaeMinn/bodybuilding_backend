@@ -1,4 +1,5 @@
 from pydantic import BaseModel, Field
+from datetime import datetime
 
 # 회원가입 시 받을 데이터
 class UserCreate(BaseModel):
@@ -39,3 +40,21 @@ class PhoneNumberSchema(BaseModel):
 class VerificationSchema(BaseModel):
     phone_number: str
     code: str
+
+
+class FatHistoryCreate(BaseModel):
+    fat_rate: str = Field(..., example="10~14 %")
+    confidence: float = Field(..., example=98.5)
+    recommended_diet: str = Field(..., example="단백질 위주 식단")
+    recommended_workout: str = Field(..., example="유산소")
+    
+class FatHistoryResponse(BaseModel):
+    id: int
+    fat_rate: str
+    confidence: float
+    recommended_diet: str
+    recommended_workout: str
+    created_at: datetime
+
+    class Config:
+        orm_mode = True
