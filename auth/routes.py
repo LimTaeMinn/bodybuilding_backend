@@ -1,7 +1,8 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 from database import SessionLocal, init_db
+from .bodyfat_model import predict_bodyfat
 from auth import models, schemas, utils
 import datetime
 import re  # 이메일 검증을 위한 정규식
@@ -196,49 +197,28 @@ def verify_code(data: schemas.VerificationSchema):
 
     return {"message": "인증 성공"}
 
-# 10. 체지방 측정 기록
-@router.post("/fat-history")
-def save_fat_history(
-    data: schemas.FatHistoryCreate,
-    token: str = Depends(oauth2_scheme),
+# 10. 체지방 예측
+@router.post(
+    "/bodyfat",
+    response_model=schemas.BodyFatResponse,
+    summary="체지방률 예측",
+    description="업로드된 이미지로 체지방률(label)과 신뢰도(confidence) 반환"
+)
+async def bodyfat_endpoint(
+    file: UploadFile = File(...),
     db: Session = Depends(get_db)
 ):
-    email = utils.verify_token(token)
-    if not email:
-        raise HTTPException(status_code=401, detail="Unauthorized")
+    # 이미지 파일 검증
+    if not file.content_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail="이미지 파일만 업로드 가능")
 
-    user = db.query(models.User).filter(models.User.email == email).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+    img_bytes = await file.read()
 
-    new_history = models.FatHistory(
-        user_id=user.id,
-        fat_rate=data.fat_rate,
-        confidence=data.confidence,
-        recommended_diet=data.recommended_diet,
-        recommended_workout=data.recommended_workout
-    )
+    try:
+        label, conf = predict_bodyfat(img_bytes)
+        # 숫자+공백 제거: '0 4% 이하' → '4% 이하'
+        label = re.sub(r'^\d+\s*', '', label)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"모델 예측 실패: {e}")
 
-    db.add(new_history)
-    db.commit()
-    db.refresh(new_history)
-
-    return {"message": "체지방 기록 저장 완료"}
-
-@router.get("/fat-history", response_model=list[schemas.FatHistoryResponse])
-def get_fat_history(
-    token: str = Depends(oauth2_scheme),
-    db: Session = Depends(get_db)
-):
-    email = utils.verify_token(token)
-    if not email:
-        raise HTTPException(status_code=401, detail="Unauthorized")
-
-    user = db.query(models.User).filter(models.User.email == email).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-
-    return db.query(models.FatHistory)\
-        .filter(models.FatHistory.user_id == user.id)\
-        .order_by(models.FatHistory.created_at.desc())\
-        .all()
+    return schemas.BodyFatResponse(body_fat=label, confidence=conf)

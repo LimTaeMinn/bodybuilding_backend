@@ -58,3 +58,7 @@ class FatHistoryResponse(BaseModel):
 
     class Config:
         orm_mode = True
+
+class BodyFatResponse(BaseModel):
+    body_fat: str = Field(..., example="20%")
+    confidence: float = Field(..., example=0.87)
