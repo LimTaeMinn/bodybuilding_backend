@@ -2,12 +2,33 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 from database import SessionLocal, init_db
-from .bodyfat_model import predict_bodyfat
 from auth import models, schemas, utils
 import datetime
 import re  # 이메일 검증을 위한 정규식
 import random
 from datetime import datetime, timedelta
+from .bodyfat_model import predict_bodyfat
+import cv2
+import numpy as np
+import mediapipe as mp
+
+mp_seg = mp.solutions.selfie_segmentation.SelfieSegmentation(model_selection=1)
+
+def has_upper_body_by_seg(image_bytes: bytes) -> bool:
+    """
+    이미지 상단 절반에 사람 픽셀이 충분히(10% 이상) 포함돼 있으면
+    '상체 사진'으로 간주.
+    """
+    arr = np.frombuffer(image_bytes, np.uint8)
+    img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+    rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+    res = mp_seg.process(rgb)
+    mask = res.segmentation_mask
+    if mask is None:
+        return False
+    h, w = mask.shape
+    top_half = mask[: h // 2, :]
+    return float(np.mean(top_half > 0.5)) >= 0.1
 
 # 인증번호 저장 (전화번호 → {"code": str, "expires_at": datetime})
 verification_codes = {}
@@ -65,7 +86,7 @@ def login(user: schemas.UserLogin, db: Session = Depends(get_db)):
     if not db_user or not utils.verify_password(user.password, db_user.hashed_password):
         raise HTTPException(status_code=400, detail="잘못된 이메일 또는 비밀번호입니다.")
     
-    expires = timedelta(minutes=utils.ACCESS_TOKEN_EXPIRE_MINUTES)
+    expires = datetime.timedelta(minutes=utils.ACCESS_TOKEN_EXPIRE_MINUTES)
     token = utils.create_access_token({"sub": user.email}, expires_delta=expires)
 
     return {
@@ -196,7 +217,6 @@ def verify_code(data: schemas.VerificationSchema):
         raise HTTPException(status_code=400, detail="인증번호가 일치하지 않습니다.")
 
     return {"message": "인증 성공"}
-
 # 10. 체지방 예측
 @router.post(
     "/bodyfat",
@@ -213,6 +233,10 @@ async def bodyfat_endpoint(
         raise HTTPException(status_code=400, detail="이미지 파일만 업로드 가능")
 
     img_bytes = await file.read()
+   
+    # 상단 절반에 사람 상체가 보이는지 체크
+    if not has_upper_body_by_seg(img_bytes):
+        raise HTTPException(400, "사람 상체 사진을 올려주세요")
 
     try:
         label, conf = predict_bodyfat(img_bytes)
